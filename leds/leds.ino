@@ -1,34 +1,28 @@
-#include <Adafruit_NeoPixel.h>
-#include <SoftSerial.h>
+#include <DigiUSB.h>
+#include <WS2811.h>
 
+#define LED_PIN     1
 #define RGB_PIN     2
 #define NUMPIXELS   3
 
-// Flash LED for debugging
-#define FLASH_LED      1
+const int HEATER_PIN = LED_PIN;
 
-const int TX_PIN = 3;
-const int RX_PIN = 4;
-
-const int HEATER_PIN = 5;
-
-Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, RGB_PIN, NEO_RGB + NEO_KHZ800);
-
-SoftSerial mySerial(RX_PIN, TX_PIN);
+DEFINE_WS2811_FN(updatePixels, PORTB, RGB_PIN)
+RGB_t rgb[NUMPIXELS];
 
 int delayval = 20;
 
 void setup()
 {
-    pinMode(RX_PIN, INPUT);
-    pinMode(TX_PIN, OUTPUT);
+#if 1
     pinMode(HEATER_PIN, OUTPUT);
-    mySerial.begin(9600);
-    pixels.begin();
-    pinMode(1, OUTPUT); // LED
+    pinMode(RGB_PIN, OUTPUT);
+    pinMode(LED_PIN, OUTPUT);
+#endif
+    DigiUSB.begin();
+    DigiUSB.println("LavaLamp 0.1");
 }
 
-int led_state = 0;
 int r = 128;
 int g = 128;
 int b = 128;
@@ -50,27 +44,29 @@ int get_color(const char* buf, int offset)
     return (buf[offset] - '0')*100 + (buf[offset+1] - '0')*10 + (buf[offset+2] - '0');
 }
 
+void setPixel(int i, int r, int g, int b)
+{
+	rgb[i].r = r;
+    rgb[i].g = g;
+    rgb[i].b = b;
+}
+
 void loop()
 {
-#if FLASH_LED
-    digitalWrite(1, led_state);
-    led_state = !led_state;
-    //mySerial.println("HELLO");
-#endif
     switch (state)
     {
     case STATE_STEADY:
         for (int i = 0; i < NUMPIXELS; i++)
-            pixels.setPixelColor(i, r, g, b);
+            setPixel(i, r, g, b);
 
         break;
 
     case STATE_BLINK:
         for (int i = 0; i < NUMPIXELS; i++)
             if (first_colour)
-                pixels.setPixelColor(i, r, g, b);
+                setPixel(i, r, g, b);
             else
-                pixels.setPixelColor(i, r2, g2, b2);
+                setPixel(i, r2, g2, b2);
         if (++iterations > blink_speed)
         {
             iterations = 0;
@@ -78,12 +74,11 @@ void loop()
         }
         break;
     }
-    pixels.show();
-    
-    delay(10);
-    if (mySerial.available() > 0)
+    updatePixels(rgb, NUMPIXELS);
+    DigiUSB.delay(10);
+    if (DigiUSB.available() > 0)
     {
-        buf[buf_index] = mySerial.read();
+        buf[buf_index] = DigiUSB.read();
         if (int(buf[buf_index]) == 13 || int(buf[buf_index]) == 10)
         {
             buf[buf_index+1] = 0;
@@ -93,12 +88,6 @@ void loop()
                 g = get_color(buf, 4);
                 b = get_color(buf, 7);
                 state = STATE_STEADY;
-                mySerial.print("Colour ");
-                mySerial.print(r);
-                mySerial.print("/");
-                mySerial.print(g);
-                mySerial.print("/");
-                mySerial.println(b);
             }
             else if (buf[0] == 'B')
             {
@@ -109,36 +98,23 @@ void loop()
                 g2 = get_color(buf, 13);
                 b2 = get_color(buf, 16);
                 state = STATE_BLINK;
-                mySerial.print("Colours ");
-                mySerial.print(r);
-                mySerial.print("/");
-                mySerial.print(g);
-                mySerial.print("/");
-                mySerial.print(b);
-                mySerial.print(" ");
-                mySerial.print(r2);
-                mySerial.print("/");
-                mySerial.print(g2);
-                mySerial.print("/");
-                mySerial.println(b2);
             }
             else if (buf[0] == 'H')
             {
                 const int heater_on = buf[1] - '0';
-                mySerial.print("Heater ");
-                mySerial.println(heater_on ? "on" : "off");
+                DigiUSB.print("Heater ");
+                DigiUSB.println(heater_on ? "on" : "off");
                 digitalWrite(HEATER_PIN, heater_on);
             }
             else if (buf[0] == 'D')
             {
                 blink_speed = get_color(buf, 1);
-                mySerial.print("Blink delay ");
-                mySerial.println(blink_speed);
+                DigiUSB.print("Blink delay ");
+                DigiUSB.println(blink_speed);
             }
             else
             {
-                mySerial.print("Unknown command: ");
-                mySerial.println(buf);
+                DigiUSB.println("ERR");
             }
             buf_index = 0;
         }
